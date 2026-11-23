@@ -1,0 +1,95 @@
+import React, { useEffect, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { createClient } from '@supabase/supabase-js';
+import { Store, ShoppingBag, Package, LogOut, Plus, Eye, EyeOff, ArrowRight, CircleHelp, Menu, X, ExternalLink } from 'lucide-react';
+import './style.css';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = supabaseUrl && supabaseKey && !supabaseUrl.includes('TU-PROYECTO') ? createClient(supabaseUrl, supabaseKey) : null;
+
+function App() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [businesses, setBusinesses] = useState([]);
+  const [activeBusiness, setActiveBusiness] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [businessName, setBusinessName] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [productName, setProductName] = useState('');
+  const [productPrice, setProductPrice] = useState('');
+  const [productDescription, setProductDescription] = useState('');
+
+  useEffect(() => {
+    if (!supabase) { setLoading(false); return; }
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => { if (session) loadBusinesses(); }, [session]);
+
+  async function loadBusinesses() {
+    const { data, error } = await supabase.from('businesses').select('*').order('created_at', { ascending: false });
+    if (error) { setNotice(error.message); return; }
+    setBusinesses(data || []);
+    if (data?.length) { setActiveBusiness(data[0]); loadProducts(data[0].id); }
+  }
+  async function loadProducts(businessId) {
+    const { data, error } = await supabase.from('products').select('*').eq('business_id', businessId).order('created_at', { ascending: false });
+    if (error) { setNotice(error.message); return; }
+    setProducts(data || []);
+  }
+  async function authenticate(e) {
+    e.preventDefault(); setBusy(true); setNotice('');
+    try {
+      if (!supabase) throw new Error('Falta configurar la conexión con Supabase. Seguí la guía de instalación incluida.');
+      if (mode === 'register') {
+        const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } });
+        if (error) throw error;
+        if (!data.session) setNotice('Cuenta creada. Revisá tu correo y confirmá la dirección para ingresar.');
+        else setNotice('Cuenta creada correctamente.');
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+    } catch (err) { setNotice(err.message || 'No se pudo completar la operación.'); }
+    finally { setBusy(false); }
+  }
+  async function createBusiness(e) {
+    e.preventDefault(); setBusy(true); setNotice('');
+    const slugBase = businessName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const slug = `${slugBase}-${Math.random().toString(36).slice(2, 6)}`;
+    const { data, error } = await supabase.from('businesses').insert({ owner_id: session.user.id, name: businessName.trim(), slug, whatsapp: whatsapp.trim() || null }).select().single();
+    setBusy(false);
+    if (error) { setNotice(error.message); return; }
+    setNotice('Tu tienda fue creada.'); setBusinessName(''); setWhatsapp('');
+    await loadBusinesses(); setActiveBusiness(data); setProducts([]);
+  }
+  async function addProduct(e) {
+    e.preventDefault(); if (!activeBusiness) return;
+    setBusy(true); setNotice('');
+    const { error } = await supabase.from('products').insert({ business_id: activeBusiness.id, name: productName.trim(), price: Number(productPrice), description: productDescription.trim() || null });
+    setBusy(false);
+    if (error) { setNotice(error.message); return; }
+    setProductName(''); setProductPrice(''); setProductDescription(''); setNotice('Producto agregado.'); loadProducts(activeBusiness.id);
+  }
+  async function signOut() { await supabase.auth.signOut(); setBusinesses([]); setActiveBusiness(null); setProducts([]); }
+
+  if (loading) return <main className="center"><div className="loader"/><p>Preparando VendeSimple…</p></main>;
+  if (!supabase) return <main className="center"><section className="setup-card"><Brand/><h1>Falta conectar VendeSimple</h1><p>La interfaz está preparada. Para habilitar el registro, necesitamos colocar la URL y la clave pública de tu proyecto Supabase en el archivo <b>.env</b>. Encontrá los pasos en INSTRUCCIONES.md.</p></section></main>;
+  if (!session) return <main className="auth-layout"><section className="hero"><Brand/><div className="hero-copy"><span className="eyebrow">TU NEGOCIO, MÁS SIMPLE</span><h1>Tu tienda online.<br/><em>Sin complicaciones.</em></h1><p>Creá tu espacio de venta, organizá tus productos y empezá a recibir pedidos desde un solo lugar.</p><div className="hero-points"><span><Store size={17}/> Tu propia tienda</span><span><Package size={17}/> Tus productos</span><span><ShoppingBag size={17}/> Tus pedidos</span></div></div><small>VendeSimple · Una herramienta para emprender</small></section><section className="auth-panel"><div className="auth-card"><div className="mobile-brand"><Brand/></div><span className="eyebrow">BIENVENIDO/A</span><h2>{mode === 'register' ? 'Creá tu cuenta' : 'Ingresá a tu cuenta'}</h2><p className="muted">{mode === 'register' ? 'Registrate gratis y prepará tu tienda.' : 'Continuá administrando tu negocio.'}</p><form onSubmit={authenticate}><label>Correo electrónico<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu correo electrónico" autoComplete="email" required/></label><label>Contraseña<div className="password-wrap"><input type={showPassword?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" minLength={8} autoComplete={mode==='register'?'new-password':'current-password'} required/><button className="eye" type="button" onClick={()=>setShowPassword(!showPassword)} aria-label="Mostrar contraseña">{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button></div></label><button className="primary full" disabled={busy}>{busy?'Procesando…':mode==='register'?'Crear cuenta':'Ingresar'} <ArrowRight size={17}/></button></form>{notice&&<div className="notice">{notice}</div>}<p className="switch">{mode==='register'?'¿Ya tenés cuenta?':'¿Todavía no tenés cuenta?'} <button onClick={()=>{setMode(mode==='register'?'login':'register');setNotice('')}}>{mode==='register'?'Ingresar':'Crear cuenta'}</button></p><p className="fineprint">Al continuar, aceptás nuestros términos y nuestra política de privacidad.</p></div></section></main>;
+
+  return <div className="app-shell"><header className="topbar"><Brand/><div className="top-actions"><span className="user-email">{session.user.email}</span><button className="outline-btn" onClick={signOut}><LogOut size={16}/> Salir</button></div></header><main className="dashboard"><div className="welcome"><div><span className="eyebrow">PANEL DE CONTROL</span><h1>Tu negocio, en marcha.</h1><p className="muted">Administrá tu tienda desde un solo lugar.</p></div><span className="plan-pill">Plan gratuito</span></div>{notice&&<div className="notice">{notice}</div>}
+  {!activeBusiness ? <section className="panel create-panel"><div className="panel-icon"><Store/></div><h2>Creá tu primera tienda</h2><p className="muted">Completá estos datos básicos. Después vas a poder agregar tus productos.</p><form onSubmit={createBusiness} className="stack-form"><label>Nombre de tu negocio<input value={businessName} onChange={e=>setBusinessName(e.target.value)} placeholder="Ej. Mi tienda" required maxLength={80}/></label><label>WhatsApp (opcional)<input value={whatsapp} onChange={e=>setWhatsapp(e.target.value)} placeholder="Código de país + número"/></label><button className="primary" disabled={busy}>{busy?'Creando…':'Crear mi tienda'} <ArrowRight size={17}/></button></form></section> : <><section className="store-card"><div className="store-symbol"><Store/></div><div className="store-info"><span className="eyebrow">TU TIENDA</span><h2>{activeBusiness.name}</h2><p className="muted">Enlace público: {window.location.origin}/tienda/{activeBusiness.slug}</p></div><span className="status-pill">Activa</span></section><div className="section-heading"><div><h2>Productos</h2><p className="muted">Agregá y organizá tu catálogo.</p></div><span className="count-pill">{products.length} productos</span></div><div className="content-grid"><section className="panel"><h3><Plus size={18}/> Agregar producto</h3><form onSubmit={addProduct} className="stack-form"><label>Nombre del producto<input value={productName} onChange={e=>setProductName(e.target.value)} placeholder="Ej. Taza artesanal" required maxLength={120}/></label><label>Precio<input type="number" min="0" step="0.01" value={productPrice} onChange={e=>setProductPrice(e.target.value)} placeholder="0,00" required/></label><label>Descripción (opcional)<textarea value={productDescription} onChange={e=>setProductDescription(e.target.value)} placeholder="Contá brevemente cómo es el producto." rows="3"/></label><button className="primary" disabled={busy}>{busy?'Guardando…':'Guardar producto'}</button></form></section><section className="panel"><h3><Package size={18}/> Tu catálogo</h3>{products.length===0?<div className="empty"><ShoppingBag size={28}/><b>Todavía no hay productos</b><span>Cuando agregues uno, aparecerá acá.</span></div>:<div className="product-list">{products.map(p=><div className="product-row" key={p.id}><div><b>{p.name}</b><small>{p.description||'Sin descripción'}</small></div><strong>{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS'}).format(p.price)}</strong></div>)}</div>}</section></div></>}
+  <footer className="footer"><span>© {new Date().getFullYear()} VendeSimple</span><span><CircleHelp size={14}/> Centro de ayuda próximamente</span></footer></main></div>;
+}
+function Brand(){return <div className="brand"><span className="brand-mark"><Store size={21}/></span><span>Vende<span>Simple</span></span></div>}
+
+createRoot(document.getElementById('root')).render(<App/>);
