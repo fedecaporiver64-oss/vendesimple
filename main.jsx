@@ -28,12 +28,22 @@ function App() {
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
+    let mounted = true;
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (mounted) setSession(data.session);
+      })
+      .catch((err) => { if (mounted) setNotice(err.message || 'No se pudo verificar la sesión.'); })
+      .finally(() => { if (mounted) setLoading(false); });
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
-      if (event === 'PASSWORD_RECOVERY') { setMode('update-password'); setNotice('Ingresá tu nueva contraseña para completar la recuperación.'); }
+      if (event === 'PASSWORD_RECOVERY') {
+        setMode('update-password');
+        setNotice('Ingresá tu nueva contraseña para completar la recuperación.');
+      }
     });
-    return () => listener.subscription.unsubscribe();
+    return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => { if (session) loadBusinesses(); }, [session]);
