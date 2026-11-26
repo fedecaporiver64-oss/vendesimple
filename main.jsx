@@ -25,6 +25,47 @@ function App() {
   const [productName, setProductName] = useState('');
   const [productPrice, setProductPrice] = useState('');
   const [productDescription, setProductDescription] = useState('');
+  const [publicStore, setPublicStore] = useState(null);
+  const [publicProducts, setPublicProducts] = useState([]);
+  const [publicLoading, setPublicLoading] = useState(false);
+  const [publicError, setPublicError] = useState('');
+  const publicMatch = window.location.pathname.match(/^\/tienda\/([^/]+)\/?$/);
+  const publicSlug = publicMatch ? decodeURIComponent(publicMatch[1]) : '';
+
+  useEffect(() => {
+    if (!publicSlug || !supabase) return;
+    let cancelled = false;
+    async function loadPublicStore() {
+      setPublicLoading(true);
+      const { data: business, error: businessError } = await supabase
+        .from('businesses')
+        .select('id, name, description, whatsapp, slug')
+        .eq('slug', publicSlug)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (cancelled) return;
+      if (businessError || !business) {
+        setPublicError(businessError?.message || 'No encontramos esta tienda o no está disponible.');
+        setPublicLoading(false);
+        return;
+      }
+      const { data: items, error: productsError } = await supabase
+        .from('products')
+        .select('id, name, description, price, image_url, category, stock')
+        .eq('business_id', business.id)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+      if (cancelled) return;
+      if (productsError) setPublicError(productsError.message);
+      else {
+        setPublicStore(business);
+        setPublicProducts(items || []);
+      }
+      setPublicLoading(false);
+    }
+    loadPublicStore();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
@@ -109,6 +150,12 @@ function App() {
   }
   async function signOut() { await supabase.auth.signOut(); setBusinesses([]); setActiveBusiness(null); setProducts([]); }
 
+  if (publicSlug) {
+    if (!supabase) return <main className="center"><section className="setup-card"><Brand/><h1>Tienda temporalmente no disponible</h1><p>La conexión de la tienda todavía no está configurada.</p></section></main>;
+    if (publicLoading) return <main className="center"><div className="loader"/><p>Cargando tienda…</p></main>;
+    if (publicError) return <main className="center"><section className="setup-card"><Brand/><h1>No pudimos abrir esta tienda</h1><p>{publicError}</p><a href="/" className="primary">Ir a VendeSimple</a></section></main>;
+    if (publicStore) return <main className="public-store"><header className="public-header"><Brand/><a href="/">Crear mi tienda</a></header><section className="public-hero"><span className="eyebrow">TIENDA ONLINE</span><h1>{publicStore.name}</h1>{publicStore.description && <p>{publicStore.description}</p>}{publicStore.whatsapp && <a className="primary" href={'https://wa.me/' + publicStore.whatsapp.replace(/[^0-9]/g, '')} target="_blank" rel="noreferrer">Consultar por WhatsApp</a>}</section><section className="public-catalog"><div className="section-heading"><div><h2>Productos</h2><p className="muted">Conocé nuestro catálogo</p></div><span className="count-pill">{publicProducts.length} productos</span></div>{publicProducts.length === 0 ? <div className="panel empty"><ShoppingBag size={28}/><b>Próximamente</b><span>Esta tienda todavía no publicó productos.</span></div> : <div className="public-product-grid">{publicProducts.map(product => <article className="public-product" key={product.id}>{product.image_url ? <img src={product.image_url} alt={product.name}/> : <div className="public-product-placeholder"><Package size={30}/></div>}<div className="public-product-info">{product.category && <small>{product.category}</small>}<h3>{product.name}</h3>{product.description && <p>{product.description}</p>}<strong>{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS'}).format(product.price)}</strong>{product.stock !== null && product.stock !== undefined && <small>{product.stock > 0 ? 'Disponibles: ' + product.stock : 'Sin stock'}</small>}</div></article>)}</div>}</section><footer className="footer"><span>© {new Date().getFullYear()} {publicStore.name}</span><span>Tienda creada con VendeSimple</span></footer></main>;
+  }
   if (loading) return <main className="center"><div className="loader"/><p>Preparando VendeSimple…</p></main>;
   if (!supabase) return <main className="center"><section className="setup-card"><Brand/><h1>Falta conectar VendeSimple</h1><p>La interfaz está preparada. Para habilitar el registro, necesitamos colocar la URL y la clave pública de tu proyecto Supabase en el archivo <b>.env</b>. Encontrá los pasos en INSTRUCCIONES.md.</p></section></main>;
   if (!session || mode === 'update-password') return <main className="auth-layout"><section className="hero"><Brand/><div className="hero-copy"><span className="eyebrow">TU NEGOCIO, MÁS SIMPLE</span><h1>Tu tienda online.<br/><em>Sin complicaciones.</em></h1><p>Creá tu espacio de venta, organizá tus productos y empezá a recibir pedidos desde un solo lugar.</p><div className="hero-points"><span><Store size={17}/> Tu propia tienda</span><span><Package size={17}/> Tus productos</span><span><ShoppingBag size={17}/> Tus pedidos</span></div></div><small>VendeSimple · Una herramienta para emprender</small></section><section className="auth-panel"><div className="auth-card"><div className="mobile-brand"><Brand/></div><span className="eyebrow">BIENVENIDO/A</span><h2>{mode === 'register' ? 'Creá tu cuenta' : mode === 'reset' ? 'Recuperá tu contraseña' : mode === 'update-password' ? 'Elegí una contraseña nueva' : 'Ingresá a tu cuenta'}</h2><p className="muted">{mode === 'register' ? 'Registrate gratis y prepará tu tienda.' : mode === 'reset' ? 'Te enviaremos un enlace para crear una contraseña nueva.' : mode === 'update-password' ? 'Usá al menos 8 caracteres.' : 'Continuá administrando tu negocio.'}</p><form onSubmit={authenticate}><label>Correo electrónico<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu correo electrónico" autoComplete="email" required/></label>{mode !== 'reset' && <label>{mode === 'update-password' ? 'Nueva contraseña' : 'Contraseña'}<div className="password-wrap"><input type={showPassword?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" minLength={8} autoComplete={mode==='register' || mode==='update-password'?'new-password':'current-password'} required/><button className="eye" type="button" onClick={()=>setShowPassword(!showPassword)} aria-label="Mostrar contraseña">{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button></div></label>}<button className="primary full" disabled={busy}>{busy?'Procesando…':mode==='register'?'Crear cuenta':mode==='reset'?'Enviar enlace':mode==='update-password'?'Guardar contraseña':'Ingresar'} <ArrowRight size={17}/></button></form>{notice&&<div className="notice">{notice}</div>}<p className="switch">{mode==='reset' || mode==='update-password' ? <>¿Querés volver al ingreso? <button type="button" onClick={()=>{setMode('login');setNotice('')}}>Volver a ingresar</button></> : <>{mode==='register'?'¿Ya tenés cuenta?':'¿Todavía no tenés cuenta?'} <button type="button" onClick={()=>{setMode(mode==='register'?'login':'register');setNotice('')}}>{mode==='register'?'Ingresar':'Crear cuenta'}</button></>}</p>{mode==='login' && <p className="switch"><button type="button" onClick={()=>{setMode('reset');setNotice('')}}>Olvidé mi contraseña</button></p>}<p className="fineprint">Al continuar, aceptás nuestros términos y nuestra política de privacidad.</p></div></section></main>;
