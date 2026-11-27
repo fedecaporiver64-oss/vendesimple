@@ -30,6 +30,11 @@ function App() {
   const [publicProducts, setPublicProducts] = useState([]);
   const [publicLoading, setPublicLoading] = useState(false);
   const [publicError, setPublicError] = useState('');
+  const [cart, setCart] = useState({});
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutNotice, setCheckoutNotice] = useState('');
   const publicMatch = window.location.pathname.match(/^\/tienda\/([^/]+)\/?$/);
   const publicSlug = publicMatch ? decodeURIComponent(publicMatch[1]) : '';
 
@@ -180,13 +185,57 @@ function App() {
     setNotice('Producto eliminado.');
     await loadProducts(activeBusiness.id);
   }
+  function addToCart(product) {
+    setCart(current => {
+      const existing = current[product.id]?.quantity || 0;
+      const nextQuantity = existing + 1;
+      if (product.stock !== null && product.stock !== undefined && nextQuantity > product.stock) {
+        setCheckoutNotice('No hay más unidades disponibles de ' + product.name + '.');
+        return current;
+      }
+      setCheckoutNotice('');
+      return { ...current, [product.id]: { product, quantity: nextQuantity } };
+    });
+  }
+  function changeCartQuantity(product, quantity) {
+    const safeQuantity = Math.max(0, Math.floor(Number(quantity) || 0));
+    if (product.stock !== null && product.stock !== undefined && safeQuantity > product.stock) return;
+    setCart(current => {
+      const next = { ...current };
+      if (safeQuantity === 0) delete next[product.id];
+      else next[product.id] = { product, quantity: safeQuantity };
+      return next;
+    });
+  }
+  async function submitPublicOrder(e) {
+    e.preventDefault();
+    if (!publicStore || !cartItems.length) return;
+    setCheckoutBusy(true); setCheckoutNotice('');
+    try {
+      const { data, error } = await supabase.rpc('create_public_order', {
+        p_business_id: publicStore.id,
+        p_customer_name: customerName.trim(),
+        p_customer_phone: customerPhone.trim(),
+        p_items: cartItems.map(item => ({ product_id: item.product.id, quantity: item.quantity }))
+      });
+      if (error) throw error;
+      setCart({}); setCustomerName(''); setCustomerPhone('');
+      setCheckoutNotice('¡Pedido enviado! Número de pedido: ' + data);
+    } catch (err) {
+      setCheckoutNotice(err.message || 'No se pudo enviar el pedido. Revisá los datos e intentá nuevamente.');
+    } finally { setCheckoutBusy(false); }
+  }
+  const cartItems = Object.values(cart);
+  const cartTotal = cartItems.reduce((sum, item) => sum + Number(item.product.price) * item.quantity, 0);
   async function signOut() { await supabase.auth.signOut(); setBusinesses([]); setActiveBusiness(null); setProducts([]); }
 
   if (publicSlug) {
     if (!supabase) return <main className="center"><section className="setup-card"><Brand/><h1>Tienda temporalmente no disponible</h1><p>La conexión de la tienda todavía no está configurada.</p></section></main>;
     if (publicLoading) return <main className="center"><div className="loader"/><p>Cargando tienda…</p></main>;
     if (publicError) return <main className="center"><section className="setup-card"><Brand/><h1>No pudimos abrir esta tienda</h1><p>{publicError}</p><a href="/" className="primary">Ir a VendeSimple</a></section></main>;
-    if (publicStore) return <main className="public-store"><header className="public-header"><Brand/><a href="/">Crear mi tienda</a></header><section className="public-hero"><span className="eyebrow">TIENDA ONLINE</span><h1>{publicStore.name}</h1>{publicStore.description && <p>{publicStore.description}</p>}{publicStore.whatsapp && <a className="primary" href={'https://wa.me/' + publicStore.whatsapp.replace(/[^0-9]/g, '')} target="_blank" rel="noreferrer">Consultar por WhatsApp</a>}</section><section className="public-catalog"><div className="section-heading"><div><h2>Productos</h2><p className="muted">Conocé nuestro catálogo</p></div><span className="count-pill">{publicProducts.length} productos</span></div>{publicProducts.length === 0 ? <div className="panel empty"><ShoppingBag size={28}/><b>Próximamente</b><span>Esta tienda todavía no publicó productos.</span></div> : <div className="public-product-grid">{publicProducts.map(product => <article className="public-product" key={product.id}>{product.image_url ? <img src={product.image_url} alt={product.name}/> : <div className="public-product-placeholder"><Package size={30}/></div>}<div className="public-product-info">{product.category && <small>{product.category}</small>}<h3>{product.name}</h3>{product.description && <p>{product.description}</p>}<strong>{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS'}).format(product.price)}</strong>{product.stock !== null && product.stock !== undefined && <small>{product.stock > 0 ? 'Disponibles: ' + product.stock : 'Sin stock'}</small>}</div></article>)}</div>}</section><footer className="footer"><span>© {new Date().getFullYear()} {publicStore.name}</span><span>Tienda creada con VendeSimple</span></footer></main>;
+    if (publicStore) return <main className="public-store"><header className="public-header"><Brand/><a href="/">Crear mi tienda</a></header><section className="public-hero"><span className="eyebrow">TIENDA ONLINE</span><h1>{publicStore.name}</h1>{publicStore.description && <p>{publicStore.description}</p>}{publicStore.whatsapp && <a className="primary" href={'https://wa.me/' + publicStore.whatsapp.replace(/[^0-9]/g, '')} target="_blank" rel="noreferrer">Consultar por WhatsApp</a>}</section><section className="public-catalog"><div className="section-heading"><div><h2>Productos</h2><p className="muted">Conocé nuestro catálogo</p></div><span className="count-pill">{publicProducts.length} productos</span></div>{publicProducts.length === 0 ? <div className="panel empty"><ShoppingBag size={28}/><b>Próximamente</b><span>Esta tienda todavía no publicó productos.</span></div> : <div className="public-product-grid">{publicProducts.map(product => <article className="public-product" key={product.id}>{product.image_url ? <img src={product.image_url} alt={product.name}/> : <div className="public-product-placeholder"><Package size={30}/></div>}<div className="public-product-info">{product.category && <small>{product.category}</small>}<h3>{product.name}</h3>{product.description && <p>{product.description}</p>}<strong>{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS'}).format(product.price)}</strong>{product.stock !== null && product.stock !== undefined && <small>{product.stock > 0 ? 'Disponibles: ' + product.stock : 'Sin stock'}</small>}<button className="primary add-cart-btn" type="button" disabled={product.stock === 0} onClick={()=>addToCart(product)}>{product.stock === 0 ? 'Sin stock' : 'Agregar al carrito'}</button></div></article>)}</div>}
+  {cartItems.length > 0 && <section className="checkout-panel"><div className="section-heading"><div><h2>Tu carrito</h2><p className="muted">Revisá las cantidades antes de enviar el pedido.</p></div><span className="count-pill">{cartItems.reduce((n,item)=>n+item.quantity,0)} unidades</span></div><div className="cart-lines">{cartItems.map(item=><div className="cart-line" key={item.product.id}><div><b>{item.product.name}</b><small>{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS'}).format(item.product.price)} c/u</small></div><div className="quantity-control"><button type="button" onClick={()=>changeCartQuantity(item.product,item.quantity-1)} aria-label="Quitar una unidad">−</button><span>{item.quantity}</span><button type="button" onClick={()=>changeCartQuantity(item.product,item.quantity+1)} aria-label="Agregar una unidad">+</button></div><strong>{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS'}).format(Number(item.product.price)*item.quantity)}</strong></div>)}</div><div className="cart-total"><span>Total estimado</span><strong>{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS'}).format(cartTotal)}</strong></div><form className="checkout-form" onSubmit={submitPublicOrder}><label>Tu nombre<input value={customerName} onChange={e=>setCustomerName(e.target.value)} required maxLength={100} placeholder="Nombre y apellido"/></label><label>Teléfono de contacto<input value={customerPhone} onChange={e=>setCustomerPhone(e.target.value)} required maxLength={40} placeholder="Código de área + número"/></label><button className="primary" disabled={checkoutBusy}>{checkoutBusy?'Enviando pedido…':'Enviar pedido'}</button></form>{checkoutNotice && <div className="notice">{checkoutNotice}</div>}<p className="checkout-note">El envío del pedido no implica un cobro online. La tienda se contactará para coordinar el pago y la entrega.</p></section>}
+  <footer className="footer"><span>© {new Date().getFullYear()} {publicStore.name}</span><span>Tienda creada con VendeSimple</span></footer></main>;
   }
   if (loading) return <main className="center"><div className="loader"/><p>Preparando VendeSimple…</p></main>;
   if (!supabase) return <main className="center"><section className="setup-card"><Brand/><h1>Falta conectar VendeSimple</h1><p>La interfaz está preparada. Para habilitar el registro, necesitamos colocar la URL y la clave pública de tu proyecto Supabase en el archivo <b>.env</b>. Encontrá los pasos en INSTRUCCIONES.md.</p></section></main>;
