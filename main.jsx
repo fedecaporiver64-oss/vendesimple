@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
-import { Store, ShoppingBag, Package, LogOut, Plus, Eye, EyeOff, ArrowRight, CircleHelp, Menu, X, ExternalLink } from 'lucide-react';
+import { Store, ShoppingBag, Package, LogOut, Plus, Eye, EyeOff, ArrowRight, CircleHelp, Pencil, Trash2 } from 'lucide-react';
 import './style.css';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -25,6 +25,7 @@ function App() {
   const [productName, setProductName] = useState('');
   const [productPrice, setProductPrice] = useState('');
   const [productDescription, setProductDescription] = useState('');
+  const [editingProductId, setEditingProductId] = useState(null);
   const [publicStore, setPublicStore] = useState(null);
   const [publicProducts, setPublicProducts] = useState([]);
   const [publicLoading, setPublicLoading] = useState(false);
@@ -148,6 +149,37 @@ function App() {
     if (error) { setNotice(error.message); return; }
     setProductName(''); setProductPrice(''); setProductDescription(''); setNotice('Producto agregado.'); loadProducts(activeBusiness.id);
   }
+  async function saveProduct(e) {
+    e.preventDefault();
+    if (!activeBusiness || !editingProductId) return;
+    setBusy(true); setNotice('');
+    const { error } = await supabase.from('products').update({
+      name: productName.trim(),
+      price: Number(productPrice),
+      description: productDescription.trim() || null
+    }).eq('id', editingProductId).eq('business_id', activeBusiness.id);
+    setBusy(false);
+    if (error) { setNotice(error.message); return; }
+    setEditingProductId(null); setProductName(''); setProductPrice(''); setProductDescription('');
+    setNotice('Producto actualizado correctamente.');
+    await loadProducts(activeBusiness.id);
+  }
+  function startEditProduct(product) {
+    setEditingProductId(product.id);
+    setProductName(product.name || '');
+    setProductPrice(String(product.price ?? ''));
+    setProductDescription(product.description || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  async function deleteProduct(product) {
+    if (!window.confirm('¿Querés eliminar el producto "' + product.name + '"?')) return;
+    setBusy(true); setNotice('');
+    const { error } = await supabase.from('products').delete().eq('id', product.id).eq('business_id', activeBusiness.id);
+    setBusy(false);
+    if (error) { setNotice(error.message); return; }
+    setNotice('Producto eliminado.');
+    await loadProducts(activeBusiness.id);
+  }
   async function signOut() { await supabase.auth.signOut(); setBusinesses([]); setActiveBusiness(null); setProducts([]); }
 
   if (publicSlug) {
@@ -161,7 +193,7 @@ function App() {
   if (!session || mode === 'update-password') return <main className="auth-layout"><section className="hero"><Brand/><div className="hero-copy"><span className="eyebrow">TU NEGOCIO, MÁS SIMPLE</span><h1>Tu tienda online.<br/><em>Sin complicaciones.</em></h1><p>Creá tu espacio de venta, organizá tus productos y empezá a recibir pedidos desde un solo lugar.</p><div className="hero-points"><span><Store size={17}/> Tu propia tienda</span><span><Package size={17}/> Tus productos</span><span><ShoppingBag size={17}/> Tus pedidos</span></div></div><small>VendeSimple · Una herramienta para emprender</small></section><section className="auth-panel"><div className="auth-card"><div className="mobile-brand"><Brand/></div><span className="eyebrow">BIENVENIDO/A</span><h2>{mode === 'register' ? 'Creá tu cuenta' : mode === 'reset' ? 'Recuperá tu contraseña' : mode === 'update-password' ? 'Elegí una contraseña nueva' : 'Ingresá a tu cuenta'}</h2><p className="muted">{mode === 'register' ? 'Registrate gratis y prepará tu tienda.' : mode === 'reset' ? 'Te enviaremos un enlace para crear una contraseña nueva.' : mode === 'update-password' ? 'Usá al menos 8 caracteres.' : 'Continuá administrando tu negocio.'}</p><form onSubmit={authenticate}><label>Correo electrónico<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu correo electrónico" autoComplete="email" required/></label>{mode !== 'reset' && <label>{mode === 'update-password' ? 'Nueva contraseña' : 'Contraseña'}<div className="password-wrap"><input type={showPassword?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" minLength={8} autoComplete={mode==='register' || mode==='update-password'?'new-password':'current-password'} required/><button className="eye" type="button" onClick={()=>setShowPassword(!showPassword)} aria-label="Mostrar contraseña">{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button></div></label>}<button className="primary full" disabled={busy}>{busy?'Procesando…':mode==='register'?'Crear cuenta':mode==='reset'?'Enviar enlace':mode==='update-password'?'Guardar contraseña':'Ingresar'} <ArrowRight size={17}/></button></form>{notice&&<div className="notice">{notice}</div>}<p className="switch">{mode==='reset' || mode==='update-password' ? <>¿Querés volver al ingreso? <button type="button" onClick={()=>{setMode('login');setNotice('')}}>Volver a ingresar</button></> : <>{mode==='register'?'¿Ya tenés cuenta?':'¿Todavía no tenés cuenta?'} <button type="button" onClick={()=>{setMode(mode==='register'?'login':'register');setNotice('')}}>{mode==='register'?'Ingresar':'Crear cuenta'}</button></>}</p>{mode==='login' && <p className="switch"><button type="button" onClick={()=>{setMode('reset');setNotice('')}}>Olvidé mi contraseña</button></p>}<p className="fineprint">Al continuar, aceptás nuestros términos y nuestra política de privacidad.</p></div></section></main>;
 
   return <div className="app-shell"><header className="topbar"><Brand/><div className="top-actions"><span className="user-email">{session.user.email}</span><button className="outline-btn" onClick={signOut}><LogOut size={16}/> Salir</button></div></header><main className="dashboard"><div className="welcome"><div><span className="eyebrow">PANEL DE CONTROL</span><h1>Tu negocio, en marcha.</h1><p className="muted">Administrá tu tienda desde un solo lugar.</p></div><span className="plan-pill">Plan gratuito</span></div>{notice&&<div className="notice">{notice}</div>}
-  {!activeBusiness ? <section className="panel create-panel"><div className="panel-icon"><Store/></div><h2>Creá tu primera tienda</h2><p className="muted">Completá estos datos básicos. Después vas a poder agregar tus productos.</p><form onSubmit={createBusiness} className="stack-form"><label>Nombre de tu negocio<input value={businessName} onChange={e=>setBusinessName(e.target.value)} placeholder="Ej. Mi tienda" required maxLength={80}/></label><label>WhatsApp (opcional)<input value={whatsapp} onChange={e=>setWhatsapp(e.target.value)} placeholder="Código de país + número"/></label><button className="primary" disabled={busy}>{busy?'Creando…':'Crear mi tienda'} <ArrowRight size={17}/></button></form></section> : <><section className="store-card"><div className="store-symbol"><Store/></div><div className="store-info"><span className="eyebrow">TU TIENDA</span><h2>{activeBusiness.name}</h2><p className="muted">Enlace público: {window.location.origin}/tienda/{activeBusiness.slug}</p></div><span className="status-pill">Activa</span></section><div className="section-heading"><div><h2>Productos</h2><p className="muted">Agregá y organizá tu catálogo.</p></div><span className="count-pill">{products.length} productos</span></div><div className="content-grid"><section className="panel"><h3><Plus size={18}/> Agregar producto</h3><form onSubmit={addProduct} className="stack-form"><label>Nombre del producto<input value={productName} onChange={e=>setProductName(e.target.value)} placeholder="Ej. Taza artesanal" required maxLength={120}/></label><label>Precio<input type="number" min="0" step="0.01" value={productPrice} onChange={e=>setProductPrice(e.target.value)} placeholder="0,00" required/></label><label>Descripción (opcional)<textarea value={productDescription} onChange={e=>setProductDescription(e.target.value)} placeholder="Contá brevemente cómo es el producto." rows="3"/></label><button className="primary" disabled={busy}>{busy?'Guardando…':'Guardar producto'}</button></form></section><section className="panel"><h3><Package size={18}/> Tu catálogo</h3>{products.length===0?<div className="empty"><ShoppingBag size={28}/><b>Todavía no hay productos</b><span>Cuando agregues uno, aparecerá acá.</span></div>:<div className="product-list">{products.map(p=><div className="product-row" key={p.id}><div><b>{p.name}</b><small>{p.description||'Sin descripción'}</small></div><strong>{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS'}).format(p.price)}</strong></div>)}</div>}</section></div></>}
+  {!activeBusiness ? <section className="panel create-panel"><div className="panel-icon"><Store/></div><h2>Creá tu primera tienda</h2><p className="muted">Completá estos datos básicos. Después vas a poder agregar tus productos.</p><form onSubmit={createBusiness} className="stack-form"><label>Nombre de tu negocio<input value={businessName} onChange={e=>setBusinessName(e.target.value)} placeholder="Ej. Mi tienda" required maxLength={80}/></label><label>WhatsApp (opcional)<input value={whatsapp} onChange={e=>setWhatsapp(e.target.value)} placeholder="Código de país + número"/></label><button className="primary" disabled={busy}>{busy?'Creando…':'Crear mi tienda'} <ArrowRight size={17}/></button></form></section> : <><section className="store-card"><div className="store-symbol"><Store/></div><div className="store-info"><span className="eyebrow">TU TIENDA</span><h2>{activeBusiness.name}</h2><p className="muted">Enlace público: {window.location.origin}/tienda/{activeBusiness.slug}</p></div><span className="status-pill">Activa</span></section><div className="section-heading"><div><h2>Productos</h2><p className="muted">Agregá y organizá tu catálogo.</p></div><span className="count-pill">{products.length} productos</span></div><div className="content-grid"><section className="panel"><h3><Plus size={18}/> Agregar producto</h3><form onSubmit={editingProductId ? saveProduct : addProduct} className="stack-form"><label>Nombre del producto<input value={productName} onChange={e=>setProductName(e.target.value)} placeholder="Ej. Taza artesanal" required maxLength={120}/></label><label>Precio<input type="number" min="0" step="0.01" value={productPrice} onChange={e=>setProductPrice(e.target.value)} placeholder="0,00" required/></label><label>Descripción (opcional)<textarea value={productDescription} onChange={e=>setProductDescription(e.target.value)} placeholder="Contá brevemente cómo es el producto." rows="3"/></label><button className="primary" disabled={busy}>{busy?'Guardando…':editingProductId?'Guardar cambios':'Guardar producto'}</button>{editingProductId && <button type="button" className="outline-btn" onClick={()=>{setEditingProductId(null);setProductName('');setProductPrice('');setProductDescription('')}}>Cancelar edición</button>}</form></section><section className="panel"><h3><Package size={18}/> Tu catálogo</h3>{products.length===0?<div className="empty"><ShoppingBag size={28}/><b>Todavía no hay productos</b><span>Cuando agregues uno, aparecerá acá.</span></div>:<div className="product-list">{products.map(p=><div className="product-row" key={p.id}><div><b>{p.name}</b><small>{p.description||'Sin descripción'}</small></div><strong>{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS'}).format(p.price)}</strong><div className="product-actions"><button type="button" className="icon-btn" title="Editar producto" onClick={()=>startEditProduct(p)} disabled={busy}><Pencil size={16}/></button><button type="button" className="icon-btn danger" title="Eliminar producto" onClick={()=>deleteProduct(p)} disabled={busy}><Trash2 size={16}/></button></div></div>)}</div>}</section></div></>}
   <footer className="footer"><span>© {new Date().getFullYear()} VendeSimple</span><span><CircleHelp size={14}/> Centro de ayuda próximamente</span></footer></main></div>;
 }
 function Brand(){return <div className="brand"><span className="brand-mark"><Store size={21}/></span><span>Vende<span>Simple</span></span></div>}
