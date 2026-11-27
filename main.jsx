@@ -28,7 +28,7 @@ function App() {
   const [editingProductId, setEditingProductId] = useState(null);
   const [publicStore, setPublicStore] = useState(null);
   const [publicProducts, setPublicProducts] = useState([]);
-  const [publicLoading, setPublicLoading] = useState(false);
+  const [publicLoading, setPublicLoading] = useState(true);
   const [publicError, setPublicError] = useState('');
   const [cart, setCart] = useState({});
   const [customerName, setCustomerName] = useState('');
