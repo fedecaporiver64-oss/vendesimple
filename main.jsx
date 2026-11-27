@@ -144,7 +144,14 @@ function App() {
     setBusy(false);
     if (error) { setNotice(error.message); return; }
     setNotice('Tu tienda fue creada.'); setBusinessName(''); setWhatsapp('');
-    await loadBusinesses(); setActiveBusiness(data); setProducts([]);
+    const { data: updatedBusinesses, error: listError } = await supabase
+      .from('businesses')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (listError) { setNotice('La tienda se creó, pero no pudimos actualizar la lista: ' + listError.message); }
+    else setBusinesses(updatedBusinesses || []);
+    setActiveBusiness(data);
+    await loadProducts(data.id);
   }
   async function addProduct(e) {
     e.preventDefault(); if (!activeBusiness) return;
