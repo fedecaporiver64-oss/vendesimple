@@ -28,10 +28,11 @@ begin
   if v_phone = '' or length(v_phone) > 40 then
     raise exception 'Ingresá un teléfono válido.';
   end if;
-  if jsonb_typeof(p_items) <> 'array'
-     or jsonb_array_length(p_items) < 1
-     or jsonb_array_length(p_items) > 50 then
+  if p_items is null or jsonb_typeof(p_items) is distinct from 'array' then
     raise exception 'El carrito no es válido.';
+  end if;
+  if jsonb_array_length(p_items) < 1 or jsonb_array_length(p_items) > 50 then
+    raise exception 'El carrito debe contener entre 1 y 50 productos.';
   end if;
 
   if not exists (
@@ -47,7 +48,8 @@ begin
 
   for v_item in select value from jsonb_array_elements(p_items)
   loop
-    if coalesce(v_item->>'product_id', '') = ''
+    if jsonb_typeof(v_item) is distinct from 'object'
+       or coalesce(v_item->>'product_id', '') = ''
        or coalesce(v_item->>'quantity', '') !~ '^[1-9][0-9]{0,3}$' then
       raise exception 'Hay un producto o una cantidad inválida.';
     end if;
